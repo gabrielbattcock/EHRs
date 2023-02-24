@@ -1,0 +1,3167 @@
+---
+title: "Analysis of EHR data"
+output: 
+  html_document:
+    toc: true
+    toc_float: true
+    number_sections: true
+    code_folding: hide
+editor_options: 
+  markdown: 
+    wrap: 72
+---
+
+This R script contains all the EHR practical sessions for the module.
+
+# Preliminary work: Import and clean data {.unnumbered}
+
+This short section installs and loads the key packages to be used and
+reads in the datasets. Please run this code before the course starts and
+ensure it all runs (up to the statement: "You are now ready to start the
+practical sessions").
+
+## Data
+
+The data used in these practicals are artificial data. Using artificial
+data allows us to access and analyse the data more freely. Real
+electronic health record data are, as we would expect, tightly protected
+and would not allow you to get such hands-on experience in the same way.
+
+*We will act as if these data were real during the practicals, but
+please do not draw any clinical conclusions from these data!*
+
+We have endeavoured to make these data as realistic as possible. The
+structure - dataset names, variable names and variable types - are
+inspired by real data. We have attempted to ensure that key correlation
+structures and relationships are respected within the data. However,
+simulated data are never quite as complex as real data. So please do
+bear in mind that these data are artificial. Let us know if you find any
+flaws or confusing aspects!
+
+Before you start, download the data and codelists as per the
+instructions provided. Create a folder that will be your working
+directory for this module (i.e. the folder in which you store the data
+and codelists, perform analyses and save results). Put all the data in a
+folder called "Sample", within your new module folder. Put all the
+codelists in a folder called "Codelists" in the same folder. Store the
+.Rmd files in this new module folder.
+
+The data consist of 7 datasets (Patient, Consultations, Clinical,
+Therapy, Additional, IMD and Death). The dataset names have a prefix of
+"Sim\_" to remind us that these data are simulated. The picture below
+shows how the different datasets link together and what variables each
+dataset contains. The red font indicates unique the unique identifier
+within a dataset, if one exists.
+
+![Figure 1. Structure of artificial data](Data_structure.png)
+
+The datasets you have been provided with have a suffix of "\_sample",
+e.g. "Sim_Patient_sample.csv", as a reminder that you have been given a
+small sample of the full data extract (the artificial data contain a
+much larger number of patients, as is typical of these sorts of data; we
+have sampled a smaller number to make the analyses manageable for the
+practical sessions).
+
+### The Patient file
+
+This artificial dataset contains basic details about relevant patients.
+We are going to imagine that we have been provided with data in response
+to a request for a data extract. We have been provided with data for
+relevant patients. The relevant patients for our research question (as
+we will see below) are those who had a prescription for one of two
+classes of drug (proton pump inhibitor (PPI) or H2-receptor antagonist
+(H2RA)), with their first such prescription being after their 18th
+birthday and between the dates 1 January 1991 and 17 April 2017.
+Further, we have only received data for patients who are deemed to have
+acceptable quality data.
+
+All other datasets are restricted to patients in this datafile.
+
+The variables contained in the patient file are shown in the table
+below.
+
+| Variable  |  Format   | Description                                               | Levels                                           |
+|-----------|:---------:|-----------------------------------------------------------|--------------------------------------------------|
+| patid     | numerical | Patient's identifier                                      |                                                  |
+| pracid    | numerical | General practitioner                                      |                                                  |
+| gender    | numerical | Patient's sex                                             | Male, Female                                     |
+| eth5      | numerical | Ethnicity (5 categories)                                  | White, South-Asian, Black, Mixed, Other, Unknown |
+| yob       | numerical | Year of birth                                             |                                                  |
+| crd       |   date    | Date the patient's current registration began             |                                                  |
+| tod       |   date    | Date the patient transferred out of practice, if relevant |                                                  |
+| deathdate |   date    | Date of death                                             |                                                  |
+| accept    | indicator | Acceptable data quality                                   | 1=acceptable, 0=not acceptable                   |
+
+### The Deprivation file
+
+This artificial dataset contains patient- and practice-level measures of
+deprivation, specifically the Index of Multiple Deprivation (IMD).
+
+| Variable   |  Format   | Description                                  | Levels                                         |
+|------------|:---------:|----------------------------------------------|------------------------------------------------|
+| patid      | numerical | Patient's identifier                         |                                                |
+| pracid     | numerical | General practitioner                         |                                                |
+| imd_person | numerical | Index of Multiple Deprivation, patient level | Least Deprived (1), 2, 3, 4, Most Deprived (5) |
+
+### The Death file
+
+This artificial dataset contains details of death for relevant patients
+(i.e. patients who died in the relevant time period). This dataset
+mimics an externally linked source of death data, e.g. from the Office
+for National Statistics.
+
+| Variable  |  Format   | Description                          |
+|-----------|:---------:|--------------------------------------|
+| patid     | numerical | Patient's identifier                 |
+| deathdate |   date    | Date of death                        |
+| death_inj | indicator | Death due to non-communicable causes |
+| death_nc  | indicator | Death due to non-communicable causes |
+| death_com | indicator | Death due to communicable causes     |
+| death     | indicator | All-cause mortality indicator        |
+
+We therefore have two stored dates of death - one internal to the
+database and one obtained through linkage to external data. The channels
+used to obtain this information is different for the two dates, thus it
+is possible for a recorded date of death to differ for the same person,
+in the two datasets. This is a common feature of such routinely
+collected data.
+
+### The Consultations file
+
+This artificial dataset contains basic details of the consultations that
+each patient had. These are largely consultations with the general
+practitioner (at the GP surgery, on the telephone or at the patient's
+home, for example), but there are some entries with brief details of
+consultations at hospitals, accident and emergency, or other third
+parties.
+
+| Variable  |  Format   | Description             | Levels                                                                                          |
+|-----------|:---------:|-------------------------|-------------------------------------------------------------------------------------------------|
+| consid    | indicator | Consultation identifier |                                                                                                 |
+| patid     | numerical | Patient's identifier    |                                                                                                 |
+| eventdate |   date    | Date of event           |                                                                                                 |
+| constype  | numerical | Consultation type       | Symptom, Examination, Diagnosis, Intervention, Management, Administration, Presenting complaint |
+
+### The Clinical file
+
+This artificial dataset contains details of clinical measurements taken
+during relevant consultations. Note that this file only contains
+information relevant to our question. Typically a much wider range of
+clinical events and measurements are available in this domain.
+
+Further, for clinical events contained within the data we have
+restricted the size and complexity of this dataset by including only the
+first recording. For example, for chronic conditions such as diabetes,
+this dataset only contains the first relevant mention. In real data,
+there might be multiple repeated entries related to that diabetes
+diagnosis.
+
+| Variable  |  Format   | Description                    | Levels                             |
+|-----------|:---------:|--------------------------------|------------------------------------|
+| patid     | numerical | Patient's identifier           |                                    |
+| eventdate |   date    | Date of event                  |                                    |
+| sysdate   |   date    | Date event entered into system |                                    |
+| constype  | numerical | Focus of consultation          | See consultation type list         |
+| consid    | numerical | Consultation identifier        |                                    |
+| medcode   | numerical | Medical code                   | See medical code (medcode) list    |
+| enttype   | numerical | Type of entity                 | See entity type list               |
+| adid      | numerical | Acceptable data quality        | 0=no additional data; ID otherwise |
+
+You have been provided with a text file "Lists.txt", which contains
+lists for consultation type and entity type. We have not provided you
+with a list of medcodes (medical codes), since there are an awful lot of
+them. Each clinical codelist (see below) contains a list of medical
+codes and a text description of each code in the list. We will find out
+more about the purpose of the medical codes and codelists later.
+
+### The Therapy file
+
+This artificial dataset contains details about prescriptions provided
+during relevant consultations.
+
+Please note that the dose, quantity and strength data are not hugely
+sophisticated in these artificial data; patterns and relationships
+likely to be present in real data may not be reflected in these
+variables.
+
+| Variable   |  Format   | Description             | Levels                           |
+|------------|:---------:|-------------------------|----------------------------------|
+| patid      | numerical | Patient's identifier    |                                  |
+| eventdate  |   date    | Date of event           |                                  |
+| prodcode   | numerical | Product code            | See product code (prodcode) list |
+| consid     | numerical | Consultation identifier |                                  |
+| qty        | numerical | Quantity prescribed     |                                  |
+| daily_dose | numerical | Estimated daily dose    |                                  |
+| strength   |  string   | Substance strength      |                                  |
+
+Similarly to the medical codes in the Clinical file, we have not
+provided you with a list of all prodcodes (product codes). Each drug
+codelist (see below) contains a list of product codes, with a text
+description. We will find out more about the purpose of the product
+codes and codelists later.
+
+### The Additional file
+
+This artificial dataset contains additional details about the clinical
+events in the Clinical datafile. This additional information is
+typically continuous measurements, such as weight, height, BMI, serum
+creatinine, pulse, etc. It also typically includes information such as
+details of smoking and alcohol consumption.
+
+This dataset has been simplified to contain only additional data on
+height, weight, BMI, smoking and alcohol. In reality, a datafile like
+this would contain data on a much wider range of measurements and
+information.
+
+| Variable |  Format   | Description                | Levels                   |
+|----------|:---------:|----------------------------|--------------------------|
+| adid     | numerical | Additional data identifier |                          |
+| patid    | numerical | Patient's identifier       |                          |
+| enttype  | numerical | Type of entity             | See entity type list     |
+| data1    | numerical | First data entry           | See additional data list |
+| data2    | numerical | Second data entry          | See additional data list |
+| data3    | numerical | Third data entry           | See additional data list |
+
+You have been provided with a text file "Lists.txt", which contains the
+entity type list and the additional data list.
+
+### Codelists
+
+There are 30 codelists. Most, but not all, of these are real codelists
+that were developed for published studies. They are more complex than
+the data at hand requires, but we have left most of the codelists in
+their original form to give you a sense of how complex these can be. We
+will explore the codelists more, particularly in the second practical
+session.
+
+Most of the codelists are for clinical events, and contain medical codes
+(`medcodes`) and their text description. The others are drug codelists;
+these contain product codes (`prodcodes`) and their text description.
+
+## The research question
+
+Throughout the practical sessions, we will be focusing on the question
+of whether proton pump inhibitors (PPIs) increase subsequent all-cause
+mortality. We will compare patients prescribed PPIs to those prescribed
+another class of drugs, H2-receptor antagonists (H2RA).
+
+This question was addressed in real data by Jeremy Brown et al
+[(published paper
+here)](https://bpspubs.onlinelibrary.wiley.com/doi/full/10.1111/bcp.14728).
+The data we are using have been simulated to resemble the data used in
+that paper as closely as possible.
+
+In order to address this question, it is useful to have a little
+knowledge of the two drug classes of interest.
+
+### PPIs and H2RAs
+
+*Proton pump inhibitors (PPIs)* is a group of commonly prescribed drugs
+used to suppress gastric acid production. They are prescribed for a
+variety of indications, including the treatment of dyspepsia, peptic
+ulcers and gastro-oesophageal reflux disease, the eradication of H.
+pylori and prophylaxis to prevent drug-induced gastrointestinal damage
+(eg, from nonsteroidal anti-inflammatory drugs).
+
+A number of observational studies have found suggestions of increased
+risks of a range of outcomes including pneumonia, chronic kidney
+disease, cancer and alcoholic liver disease, as well as all cause
+mortality, among those prescribed PPIs.
+
+Various types of PPI exist: omeprazole, lansoprazole, pantoprazole,
+rabeprazole or esomeprazole.
+
+*H2-receptor antagonists (H2RAs)* are a group of a gastric-acid
+suppressing medications which are used for similar indications to PPIs.
+
+H2RAs were available a number of years before PPIs. However, more
+recently PPIs have become the most commonly prescribed acid-suppression
+therapy in the UK. Superior efficacy of PPIs has been demonstrated in
+trials for many indications.
+
+Various types of H2RA exist: cimetidine, ranitidine, famotidine,
+nizatidine.
+
+## R
+
+The subsections below make brief comments about how we will use R in
+these practical sessions.
+
+### R markdown
+
+To work through this R markdown (.Rmd) file, open RStudio, or
+equivalent, and open the .Rmd file from within that. The file is a mix
+of text and R code. Each short block of R code is called a "chunk".
+There are various ways of running the R code. If you locate the "Run"
+button on the ribbon and click on the down arrow to the right, this will
+provide various ways of running the R chunks. Alternatively, if you
+scroll down to a particular chunk, the green buttons to the right of the
+screen offer to run the current chunk or to run all chunks above. If
+your cursor is in a code chuck, you can also use the Ctrl+Shift+Enter
+keyboard shortcut (Cmd+Shift+Enter on Mac) to run that chunk.
+
+### Tidyverse
+
+In these practicals, we will be using the tidyverse suite of tools, in
+particular the `dplyr` package; if you aren't familiar with these, check
+out the (very) brief introduction provided on Moodle.
+
+Before you load this package, you will need to install it if you have
+not already done so. This is achieved using the
+`install.packages("tidyverse")` command. To input this command, find the
+Console window in RStudio (the bottom window). Click to the right of the
+blue greater-than sign to activate the window. Type the command
+(install.packages("tidyverse")) into the Console and press Enter. You
+only need to install the package once. After that, each time you want to
+use the `tidyverse` package, you need to load it, as follows:
+
+```{r, message=FALSE, warning=FALSE}
+library(tidyverse)
+```
+
+## Read in data
+
+### Read the Flat files
+
+First we will read in all the raw data files (sometimes these are called
+"flat files"). Make sure you have all the data in a folder called Sample
+and all the codes in a folder called Codelists in the same folder as
+this .Rmd notebook.
+
+We could read in a single dataset, for example "Sample/Patient.csv", as
+follows:
+
+```{r, message=FALSE}
+one_dataset <- read_csv("../Sample/Sim_Patient_sample.csv")
+# view(one_dataset)
+```
+
+To look at this dataset, type in `View(one_dataset)` into the Console
+and press Enter. This will bring up a new window showing you the dataset
+called `one_dataset`.
+
+To read in each data file individually would be very time consuming
+since there are quite a few files. Therefore, to make our code more
+efficient we can read them all at the same time. Further, we will store
+all data files in one big list (called `data`) to keep things organised.
+We can also directly grab the file names from the file paths and name
+our list objects accordingly.
+
+```{r, message=FALSE}
+# Make a list of all file paths and file names
+files <- list.files("../Sample", full.names = TRUE, pattern = ".csv")
+filenames <- str_to_lower(str_remove(str_remove(tools::file_path_sans_ext(basename(files)), "_sample"), "Sim_"))
+
+# Apply the read_csv function to all files and save the output as one big list
+data <- lapply(files, readr::read_csv)
+names(data) <- filenames
+```
+
+If you are struggling to see what the chunk of code above does, try
+typing `files` into the Console window and press Enter. This will allow
+you to see what the first line of code has stored within `files`.
+Similarly, try typing `filenames`. The data are now stored within a big
+list, `data`, which you can verify by typing `class(data)`. If you type
+`data` into the Console, you will see that this list comprises 7
+different `tibbles`, which is a posh type of data frame (i.e. R's
+terminology for a dataset). These tibbles can be viewed individually,
+for example by typing in: `View(data$patient)`.
+
+### Factor variables
+
+The following line of code lists the different items (the separate
+datasets) in the `data` list and prints out each variable in the dataset
+along with its format (i.e. is it a numerical variable, a logical
+(true/false) variable, a string/character variable? And so on).
+
+```{r}
+sapply(data, function(x) sapply(x, class))
+```
+
+From the output above, we can see that, for example, the variable
+`gender` in patient dataset is currently stored as a character variable.
+In other words, the values are stored as the words "Female" and "Male".
+To use the variable in analysis, it is more convenient to store this as
+a factor, which is a number with labels under the hood (e.g. values 1
+and 2, where 1 represents "Female" and 2 represents "Male"). We will now
+convert all the categorical variables to factors rather than text
+variables.
+
+The first line of code below creates a list (called `factor_vars`) of
+all the variables we want to covert to factors (i.e. categorical
+variables) in the different datasets. The subsequent line of code
+changes each of these from a character, or string, variable to a factor
+variable.
+
+```{r, results=FALSE}
+# Specify which columns should be factors
+factor_vars <- c("gender", "eth5", "constype", "imd_person")
+# For all datasets, across any of the above specified columns, convert to factors
+data <- map(data, ~.x %>% mutate(across(any_of(factor_vars), as_factor)))
+
+
+```
+
+By default, the levels of a factor are determined using the order of
+appearance in the data, however this might not always be appropriate. Of
+the variables we just converted to factors, there is one where we need
+to make sure they levels are ordered: `imd_person`.
+
+Check the levels of a factor using `levels()`. If it looks like they are
+out of order, you will need to change the order of the levels. Given a
+factor called my_factor with Levels: "second", "first", "third", we can
+reorder the levels like this:
+`my_factor <- factor(my_factor, levels = c("first", "second", "third"))`
+
+```{r, results=FALSE}
+levels(data$imd$imd_person)
+data$imd$imd_person <- factor(data$imd$imd_person, levels = c("Least Deprived (1)", "2", "3", "4", "Most Deprived (5)"))
+levels(data$imd$imd_person)
+```
+
+### Read the codelists
+
+As well as the data files, you have been provided with a number of
+codelists. We will explore the meaning and purpose of these in a later
+session. For now, we will simply run the code to read these codelists
+into R.
+
+```{r, message=FALSE}
+# Make a list of all file paths and file names
+files <- list.files("../Codelists", full.names = TRUE, pattern = "codes.csv")
+filenames <- str_to_lower(str_remove(tools::file_path_sans_ext(basename(files)), "_codes"))
+
+# Apply the read_csv function to all files and save the output as one big list
+codes <- lapply(files, readr::read_csv)
+names(codes) <- filenames
+```
+
+The code above creates a list called `codes`, which contains many
+different tibbles, or datasets, each containing a single codelist. If
+you type `length(codes)` into the Console, you will see there are 33
+codelists. To view an individual codelist, you can (for example) type
+`View(codes$stroke)`.
+
+## Create account in Open Codelists
+
+In the second practical we will explore the steps used to create a new
+codelist. In order to do this, you will need an account. Please do this
+before the practical sessions.
+
+1.  Go to <https://www.opencodelists.org/>
+2.  Click "Sign up" and make an account
+
+End of preparatory work
+
+You are now ready to start the practical sessions below!
+
+If you are less familiar with R, feel free to read ahead and try out
+some of the code snippets prior to the scheduled sessions.
+
+# Practical One: Exploring the data
+
+This practical is split into two components. The first is not
+computer-based and asks you to consider the feasibility of a study to
+address a given research question. The second half of the practical
+focuses on exploring the data at hand.
+
+## Study design
+
+We will now consider our research question for these practical sessions:
+whether proton pump inhibitors (PPIs) increase subsequent all-cause
+mortality.
+
+Discussion questions
+
+Thinking about the issues raised in the lecture, consider the following
+questions:
+
+-   What type of question is the research question?
+-   Do you think this research question can be addressed using
+    electronic health record data?
+-   What are the big biases you might expect?
+-   What is a sensible comparison group?
+-   What variables would you ideally like to include in your analysis?
+    What would their role be in that analysis? And do you think these
+    variables are likely to be well recorded in these data?
+-   How does calendar time affect your analysis? Have there been
+    important changes you need to think about?
+
+## Exploring the (artificial) data
+
+The data consist of 7 datasets. We will begin by exploring the Patient
+dataset. This contains details of the patients whose data are included
+in the "flat files".
+
+### The Patient file
+
+You may want to start by using the command `View(data$patient)` to look
+at the dataset.
+
+```{r}
+library(ggplot2)
+view(data$patient)
+```
+
+The code below asks how many rows of data there are in the Patient
+dataset, and then how many unique patient IDs there are (variable:
+`patid`). Note that the pipe (`%>%`) can be thought of as meaning "and
+then". This code performs the following steps in sequence:
+
+-   Open the dataset `data$patient`
+-   Summarise the dataset by
+    -   counting the number of rows, and
+    -   counting the number of distinct values of `patid`
+
+The result of performing those steps is printed out.
+
+```{r}
+total <- data$patient %>% n_distinct()
+
+```
+
+The dataset contains information about sex and ethnicity. Let's tabulate
+sex. To do this, we will again use the pipe to perform a number of
+actions in sequence. We will:
+
+-   Open the dataset `data$patient`
+-   Divide the data by sex (into Males and Females)
+-   Summarise each of the sub-datasets by counting the number of rows
+    (i.e. counting the numbers of males and females)
+-   Calculate the overall percentages (of males and females within the
+    sample) from those counts
+
+```{r}
+Male <- data$patient %>%  filter(gender == "Male")
+Female <- data$patient %>%  filter(!(gender == "Male"))
+
+n_male <- Male$patid %>% n_distinct()
+n_female <- Female$patid %>% n_distinct()
+
+m_percent <- n_male/total
+f_percent <- n_female/total
+```
+
+The variable `crd` contains the date at which the patient registered at
+the general practice (within which these data were collected). The
+variable `tod` contains the date at which the patient transferred out of
+that practice. This latter variable is empty if the patient was still
+registered at that practice at the end date of data extraction (17 April
+2017).
+
+Use the following code to graph the date at which patients registered at
+their general practice.
+
+```{r}
+
+ggplot(data = data$patient) +
+  geom_histogram(aes(crd), bins = 50)
+```
+
+### The Consultation file
+
+The Consultation file contains data about all consultations recorded for
+the patients in the data extract.
+
+```{r}
+head(data$consultations)
+```
+
+The following histogram shows how many consultations different patients
+have recorded. Remember that the length of time a person is followed-up
+in these data might vary a lot.
+
+```{r}
+numbers_consult <- data$consultations %>%
+  group_by(patid) %>%
+  summarize(nconsult = n()) 
+
+hist(numbers_consult$nconsult)
+```
+
+We can explore the period of time over which consultations took place,
+using the following code:
+
+```{r}
+hist(data$consultations$eventdate, "years")
+
+```
+
+Question
+
+What possible explanations might there be for the sudden jump that you
+can see in the graph above?
+
+### Explore links between patient and consultation file
+
+The command `anti_join` returns a dataset containing the rows of the
+first dataset (here `patient`) for any row that is not matched to the
+second dataset (`consultations`) by the matching variable provided
+(`patid`).
+
+The code below shows us there are no patients without any consultations.
+
+```{r}
+nrow(anti_join(data$patient, data$consultations, by = "patid"))
+
+```
+
+Similarly, there are no consultations without a patient.
+
+```{r}
+nrow(anti_join(data$consultations, data$patient, by = "patid"))
+```
+
+### Explore links between consultation and clinical file
+
+The number of rows and patients in the Clinical file are shown below:
+
+```{r}
+data$clinical %>%
+  summarize(nrow=n(), 
+  npatient=n_distinct(patid))
+```
+
+The Consultations and Clinical data are linked by the identifier
+`consid`.
+
+Question
+
+Are there any clinical data not linked to a consultation? Conversely,
+are there any consultations with no associated clinical data?
+
+```{r}
+nrow(anti_join(data$consultations, data$clinical, by = "consid"))
+nrow(anti_join(data$clinical, data$consultations, by = "consid"))
+
+
+```
+
+### Exploring the additional data (BMI, weight and height)
+
+The clinical file has no obvious place (variable) to store continuous
+measurements. So, for example, if the general practitioner measures a
+patient's weight, this is a clinical measurement and - as such - should
+be recorded in the clinical file. Similarly, there is no convenient way
+of recording a patient's alcohol consumption or details of their smoking
+status in the clinical file. Additional information such as this is
+stored in the Additional file. It is linked to the corresponding entry
+in the Clinical file via the additional data identifier (`adid`). The
+clinical file has a variable representing the entity type (variable
+`enttype`) which identifies the type of Clinical information stored in
+that row of data.
+
+To obtain all the weight measurements, we have to identify the type of
+entity which represents weight. This can be found in a text file that
+you have been provided with (Lists.txt). That file informs us that
+weight and body mass index (BMI) both fall under the entity type 13.
+This is stored in the variable `enttype` in the Clinical file. Further,
+this spreadsheet informs us that if it is a weight measurement, this
+will be stored in kilograms as `data1` (in the Additional file) but if
+it is a BMI measurement, it will be stored as `data3`.
+
+You might wonder why the additional data file contains no date variable
+to tell us the date on which a particular measurement, or recording, was
+made. This is because each entry in the additional data file corresponds
+to an entry in the Clinical data file; the latter (the Clinical data
+file) contains the relevant date.
+
+In order to look at the recorded weight measurements, we need to:
+
+1.  Open the Clinical file
+2.  Extract all entries with entity type indicating a weight measurement
+    (`enttype`=13)
+3.  Merge these entries to the corresponding additional data in the
+    Additional file, linked by the identifier `adid`
+4.  Keep those with a non-missing entry in the variable `data1` (weight,
+    in kilograms)
+
+The code chunk below performs those steps in sequence. Just to keep
+things simple, the last line keeps only the variables for the patient
+identifier, the weight measurement and the date of the measurement.
+
+The subsequent command graphs the weight measurements. Does the
+distribution look reasonable?
+
+```{r}
+
+```
+
+We will use similar code to extract BMI data (entity type 13, with data
+stored in variable data3 in the Additional file).
+
+```{r}
+
+```
+
+And similarly, height:
+
+```{r}
+
+```
+
+Question
+
+What do you think about the distributions of height, weight and BMI? Are
+they sensible? If not, what are likely explanations for what you see?
+Think about how any errors or measurement error might arise.
+
+We might be happy to make clinical judgements about what an implausible
+value is, and to remove those values. For example, we might think that
+heights of more than 2.15 metres are implausible. The next chunk of code
+removes "implausible" values for all three variables and graphs the
+remaining values:
+
+```{r}
+
+```
+
+Question
+
+What do you think about the assumptions made and the resulting
+distributions?
+
+We will return to the BMI data in practical 4.
+
+## Summary
+
+In this practical session we have explored a number of different aspects
+of the (artificial) data that we will be using through the module. The
+key messages that we hope you will take from this are:
+
+-   It is really important to understand the collection process to
+    understand the limitations and quirks of the data.
+-   Assumptions are unavoidable when wrangling these data for analysis.
+    These assumptions will have consequences for the analysis so these
+    need to be carefully thought out, documented and communicated.
+
+# Practical Two: Using codelists
+
+This practical is in two parts. In the first, we will use the Open
+Codelists tool to create some codelists, so you can get a feel for how
+the process works. Don't worry if you do not have the required clinical
+expertise to do a good job - we will not be using your codelists!
+
+In the second part of the practical, we will use codelists to begin to
+extract a cohort to address our research question relating to PPIs and
+mortality.
+
+## Create codelists using the opencodelists builder
+
+The Open Codelist tool provides a simple to use codelist builder.
+
+1.  Sign into your previously-created account at
+    <https://www.opencodelists.org/>
+2.  Click "My codelists" and then "Create a codelist"
+
+### Read codes for stomach cancer
+
+Create a codelist called "stomach cancer" using CTV3(Read V3) as the
+coding system. The codelist should contain diagnosis codes for malignant
+stomach cancer (synonyms: gastric cancer, neoplasm of stomach) including
+all types of malignant cancer (e.g. carcinomas, lymphomas,
+adenocarcinomas), but not include benign tumours. Only include codes for
+clinical findings, and not for other categories such as procedures,
+assessment scales, etc. and don't include codes for family history of
+stomach cancer. Once you are done, click save for review and have a look
+at the "Full list" and the "Tree" tabs.
+
+### SNOMED codes for proton pump inhibitors
+
+Create a codelist called "PPI" using SNOMED as the coding system. The
+codelist should contain product codes for proton pump inhibitors.
+Include only codes in the product category. Once you are done, click
+save for review and have a look at the "Full list" and the "Tree" tabs.
+
+### ICD codes for diabetes
+
+Create a codelist called "diabetes" using ICD-10 as the coding system.
+The codelist should contain diagnosis codes for diabetes mellitus,
+including type 1, type 2 and pregnancy related (Hint: Diabetes insipidus
+is unrelated to diabetes mellitus). Don't include "history of" or
+"family history of" codes, or other diseases related to diabetes. Once
+you are done, click save for review and have a look at the "Full list"
+and the "Tree" tabs.
+
+Discussion questions
+
+Have a go at creating the three codelists above in the three different
+coding systems.
+
+-   *Read codes for stomach cancer* Did you have to search for multiple
+    synonyms to find all the relevant codes?
+-   *SNOMED codes for proton pump inhibitors* How many "child" codes are
+    (typically) associated with one "parent"?
+-   *ICD codes for diabetes* Remembering what each coding system
+    contains and how they are organised, do you think creating this
+    particular codelist would have been more difficult or less difficult
+    using Read codes or SNOMED, and why?
+-   What differences did you find between creating the three codelists?
+    Were some easier than others? Why?
+
+## The research question: PPIs and mortality
+
+To address our research question of whether proton pump inhibitors
+(PPIs) increase all cause mortality, we will compare people who receive
+a PPI with those who receive a different drug, a H2RA, in terms of their
+subsequent mortality. Although the two classes of drugs are prescribed
+for similar indications (reasons), these two groups of patients are
+likely to be different in various ways, so we will need to account for
+confounding. To increase our confidence that we have adequately captured
+information about confounding, we will insist that our patients in this
+comparison have been registered at their general practice for at least a
+year prior to their prescription (to allow time for the general practice
+to gather information about the patient's prior health).
+
+Finally, we will only consider patients whose first PPI or H2RA
+prescription is given during the period from 1 January 1991 and 17 April
+2017.
+
+Identifying this eligible patient group and exploring their prior health
+status will require us to use codelists. In the remainder of the current
+practical, we will use drug codelists for PPIs and H2RAs to identify the
+eligible patient group. We will then use codelists for some key
+comorbidities to extract information about the patients' health status
+prior to receiving their first PPI or H2RA prescription.
+
+## Identifying the eligible patient population
+
+Have a look at the Therapy dataset.
+
+```{r}
+head(data$therapy)
+```
+
+We will need the `ppi` and `h2ra` codelists to identify prescriptions
+for PPIs and H2RAs, respectively. These codelists map to the therapy
+dataset using the identifier `prodcode`. The codelists additionally
+contain a variable indicating the name of the product (`prodname`) and
+the relevant drug substance (`substance`). For PPIs and H2RAs, the
+codelists contain an additional column (`drug`), which divides PPIs and
+H2RAs into clinically useful sub-groups.
+
+```{r}
+head(codes$ppi)
+head(codes$h2ra)
+```
+
+In order to identify the group described above, the first step is to
+identify each patient's date of first PPI or H2RA prescription. To do
+this, we need to perform the following steps:
+
+-   Identify rows of the Therapy dataset (i.e. prescriptions) that match
+    the PPI codelist (i.e. prescriptions for PPI).
+-   Identify rows of the Therapy dataset (i.e. prescriptions) that match
+    the H2RA codelist (i.e. prescriptions for H2RA).
+-   Put these lists of prescriptions together
+-   Finally, we retain the first (earliest date) per person.
+
+The code below performs the first three steps to obtain a list of all
+prescriptions for PPI and H2RA in our data. This is stored in an object
+called `ppis_h2ras`.
+
+```{r}
+ppi <- data$therapy %>%  inner_join(codes$ppi, by = "prodcode") %>% mutate(ppi = 1)
+h2rd <- data$therapy %>%  inner_join(codes$h2ra, by = "prodcode") %>% mutate(ppi = 0)
+
+ppis_2hras <- rbind(ppi, h2rd)
+```
+
+We only want the first such prescription. We want to keep the patient
+identifier, the date of the first prescription and whether the
+prescription was for a PPI or a H2RA.
+
+Note that to keep the first prescription, we have to sort by patient and
+then, within patient, by the event (prescription) date. Then the
+`filter` line keeps the top row of data (which is the one with the
+lowest numerical date, which is equivalent to the chronologically
+earliest date). The code below does this then prints the number of rows
+in the `cohort` dataset.
+
+```{r}
+cohort <- ppis_2hras %>% arrange(patid, eventdate) %>% group_by(patid) %>% slice(1)
+
+```
+
+We will now implement the exclusion criteria listed previously. First,
+we will remove patients for whom their first PPI/H2RA prescription was
+less than one year after registration. The registration date can be
+found in the "Patient" file and is stored in a variable called `crd`.
+Again, print the number of rows (the number of patients).
+
+```{r}
+cohort <- cohort %>% # Take the cohort dataset created in the previous step ...
+  left_join(data$patient[c("patid", "crd")], by="patid") %>% #...and join the "Patient" dataset ...
+  filter(eventdate > crd+365.25)
+  
+cohort <- cohort %>% filter(eventdate >= as.Date("1991-01-01") & eventdate <= as.Date("2017-04-17"))
+nrow(cohort)
+```
+
+Finally, we will remove patients for whom the first PPI/H2RA
+prescription was before 1 January 1991 or after 17 April 2017. Print the
+number of rows.
+
+```{r}
+
+```
+
+The remaining patients are eligible. The date of their first PPI/H2RA
+prescription is the date that the patient enters our study. We will call
+this their *index date*. The code below renames the patients' date of
+first prescription from `eventdate` to `indexdate` to reflect this. The
+purpose of the `cohort` dataset is to tell us who is in our eligible
+patient cohort so we can remove any additional information. Therefore,
+the code below drops all variables except for `patid` (patient
+identifier), `indexdate` (date of entering study) and `ppi` (exposure
+group).
+
+```{r}
+cohort <- cohort %>% 
+  select(patid, eventdate, ppi) %>% 
+  rename(indexdate = eventdate)
+cohort
+```
+
+**OPTIONAL**
+
+A flowchart is a common way of clearly communicating this process. In
+randomized clinical trials, the CONSORT diagram is a required element of
+a report of the trial. Similar flowcharts are often used in
+observational study to quickly show which patients were included and
+excluded.
+
+The `consort` package in R can create such flowcharts. First, you will
+need to install the package (`install.packages("consort")`). Then the
+following code illustrates a simple use of this package:
+
+```{r}
+
+```
+
+Question
+
+Think about different ways of drawing a flowchart here. Does the order
+matter? What are the key criteria for a good flowchart?
+
+**End Optional section**
+
+## Identify data on comorbidities
+
+We have a list of eligible patients and the date at which each patient
+became eligible. We know whether the patients received a PPI or a H2RA
+prescription. We now want to consider the health status of these two
+groups at that point in time (at the index date).
+
+We will consider two different settings:
+
+1.  Ever diagnosed with X (prior to the index date)
+2.  Recently experienced X (in relation to the index date)
+
+In both cases, information on X will be extracted by taking the rows of
+the Clinical file that appear in a relevant codelist. We will also need
+to use our `cohort` dataset to restrict attention to those patients who
+are eligible for our study and to know when their index date is.
+
+Before continuing with the programming below, think about the steps
+required to obtain a list of eligible patients who fit criteria 1 and 2
+above. What order do you think we need to merge/join datasets? Try to
+write down the required steps before proceeding below.
+
+For example, to obtain a list of eligible patients who meet criterion 1.
+we could:
+
+(A) Open the Clinical file. Join to the cohort data, keeping rows of the
+    Clinical file that belong to patients in the cohort dataset. Drop
+    events in the Clinical file that occur after (or on) the index date.
+    Join to the codelist for X, keeping only rows of the Clinical file
+    that match the codelist file. Keep one row per patient. Generate an
+    indicator of prior diagnosis of X. Keep patient IDs and indicator.
+
+or
+
+(B) Open the Clinical file. Join to the codelist for X, keeping only
+    rows of the Clinical file which match codes in the codelist. Keep
+    the first relevant code for each patient. Join to the cohort
+    dataset, keeping patient IDs that match the Clinical/codelist data.
+    Drop events that occur after (or on) the index date. Generate an
+    indicator of prior diagnosis of X. Keep patient IDs and indicator.
+
+Question
+
+Which approach is better? And why? Would they both lead you to the
+correct list?
+
+Now suppose you are only interested in diagnoses that occurred within
+the year prior to the index date. How would you adapt the strategies
+above? Which would work better?
+
+### Diabetes
+
+Now we have our list of eligible patients and the date at which they
+became eligible. We will now extract some data on comorbidities for
+these people. One likely confounder of the relationship between PPIs and
+mortality is whether or not the patient had been diagnosed with
+diabetes. Diabetes is a chronic condition, therefore we are interested
+in whether the patient has *ever* been diagnosed with diabetes prior to
+entering our study (i.e. prior to their index date).
+
+Within our data, information on diagnoses is stored within the Clinical
+file. We have a diabetes codelist. Have a look at the codelist using the
+code: `View(codes$diabetes)`. The codelists link to the Clinical file
+via the identifier `medcode`.
+
+To obtain a list of patients who have been diagnosed with diabetes, we
+want to follow these steps:
+
+-   Retain rows of the Clinical dataset with codes that appear in the
+    diabetes codelist.
+-   Keep the first event per patient.
+
+```{r}
+
+```
+
+At this stage, our object `diabetes` contains a list of the first
+diagnosis for the whole set of patients represented in the data (for
+those patients who have experienced a diabetes diagnosis).
+
+But not all these are eligible for our study. So we now want to restrict
+this to patients who appear in our eligible patient group. To do this,
+we join the `diabetes` list to the previously created `cohort` (list of
+eligible patients), keeping only rows with matches.
+
+```{r}
+
+```
+
+Some of these diagnoses may be after the patient becomes eligible, in
+which case we do not want to count that diagnosis, so we now remove
+diagnoses which occurred after the index date.
+
+```{r}
+
+```
+
+At this stage, we have a dataset containing a list of patients who have
+experienced the diagnosis of interest prior to becoming eligible (prior
+to their index date). It is often helpful to have an indicator of binary
+variables like this (i.e. 0=Absent, 1=Present), so the code below
+creates this. Finally, we keep only the variables required for
+subsequent analysis (namely, patient identifier and the indicator that
+the patient had diabetes).
+
+```{r}
+
+```
+
+We have gone through the steps one by one above to see what the code was
+doing. However, the beauty of this R package is that these steps can be
+done in one block of code. In this case, we could have obtained our
+diabetes indicator in the single step below:
+
+```{r}
+
+```
+
+*Hint*: If you get confused about these big blocks of code you can
+truncate to the first x number of actions (e.g. you could remove all
+code after "`eventdate)`" on the third line above and run that to see
+where the code takes you at that point. Then you can add in the lines
+after one by one to step through the code. You can also select the part
+of the code you want to run (e.g. from `data$clinical` up to
+`arrange(patid, eventdate))` and hit Ctrl+Enter (Cmd+Enter on Mac) to
+run only the selected code.
+
+### Recent GERD (gastro-oesophageal reflux disease)
+
+Note that the abbreviation GERD comes from the US spelling of the
+condition. The abbreviation GORD, following the British spelling, is
+less frequently used.
+
+Sometimes we are only interested in recent events. For example, a
+transient condition that has been cured long in the past is probably not
+going to be a relevant confounder.
+
+This is different from above because we are only interested in events
+near to the index date, so we can't just drop all but the first records
+per patient. Therefore, we will perform the following steps:
+
+1.  Join `cohort` to the clinical data, keeping only rows with matches.
+2.  Arrange (sort) by patient ID and eventdate
+3.  Keep only rows with a medcode that appears in the GERD codelist
+4.  Keep only entries for clinical events within 6 months (180 days) of
+    the index date
+5.  Keep only the first event per patient.
+6.  Create an indicator called `recent_gerd` set to 1
+7.  Drop all but the indicator and patient IDs and name the resulting
+    object `recent_gerd` (same as the indicator variable).
+
+Look through the code below and make sure you understand how the steps
+map to the code.
+
+```{r}
+
+```
+
+## Summary
+
+In this practical session we have used codelists to extract an eligible
+patient population based on a drug prescription, used a codelist to
+identify a past diagnosis and recent clinical events. The key messages
+that we hope you will take from this are:
+
+-   Codelists are a vital step in process of going from raw data to
+    variables that can be used in analysis.
+-   The assumptions made in creating the codelists can have important
+    impact on the analysis but these assumptions are not always
+    explicit.
+
+# Practical Three: Drug exposure data
+
+In this practical we will explore the drug exposure data.
+
+> **Please note** the drug data, in particular, are not very
+> sophisticated. We will explore various facets of these data for the
+> purposes of demonstration but please remember that these are
+> artificial. The real patterns of prescriptions are likely to look a
+> bit different.
+
+## Quantity and daily dose
+
+In this practical we will focus on the drugs that define our exposure of
+interest: PPIs and H2RAs. For comparison, we will also look at oral
+anticoagulants. We begin by extracting all prescriptions in our data for
+these three drugs.
+
+```{r}
+
+```
+
+### Quantity
+
+The data contain a variable, `qty`, which tells us the quantity that was
+prescribed. Below we graph this variable for the three drugs.
+
+```{r}
+
+```
+
+```{r}
+
+```
+
+Question
+
+What are the most commonly prescribed quantities for each drug?
+
+### Daily dose
+
+The daily dose variable is estimated by the (imaginary) database. Each
+prescription comes with text instructions for the patient (e.g. "take
+three times daily"). Where possible, the daily dose is extracted from
+these instructions. For the example just provided, the daily dose would
+be 3.
+
+The code below tabulates the daily doses for the three drugs in turn.
+
+```{r}
+
+```
+
+Question
+
+What do you think the zero dose means? Are there different proportions
+of zero doses for the three drugs? Why might that be?
+
+### Duration
+
+We can use the quantity provided and the estimated daily dose to obtain
+the duration, using the formula: duration = quantity/daily dose. The
+code below does this, setting the duration to missing if the daily dose
+is given as zero.
+
+```{r}
+
+```
+
+The graphs below show the durations.
+
+```{r}
+
+```
+
+Question
+
+Do the duration plots show different patterns to the quantity plots?
+
+### Strength
+
+We also have data on the substance strength. The code below tabulates
+these data for the three drugs.
+
+```{r}
+
+```
+
+Question
+
+Why do you think there are some entries given in the form of a sum?
+
+## Treatment persistence
+
+In our study, the main exposure is a drug exposure. We are therefore
+very interested in the pattern of prescriptions for that exposure over
+time. Do the patients in the PPI group continue to receive PPI
+prescriptions indefinitely, or do many discontinue PPIs soon after
+entering the study? We will now begin to explore this issue.
+
+### Subsequent prescriptions for PPI in the PPI group
+
+The code below picks out a list of patients who entered our study in the
+PPI group and stores them in an object called `ppi_group`. Similarly,
+`h2ra_group` is a list of patients who entered our study in the H2RA
+group.
+
+```{r}
+
+```
+
+The following code picks out all PPI prescriptions given to patients in
+the ppi_group on or after study entry and counts the number per patient.
+
+```{r}
+
+```
+
+Question
+
+How may patients in the PPI group in our study had no further
+prescriptions for PPI? Is this a problem?
+
+> Note: The apparent jump in frequency at 20 prescriptions is an
+> artefact of the artificial generation process. The number was capped
+> at 20 to restrict the size of the simulated therapy file. This would
+> obviously not be a feature in real data!
+
+The code below repeats the analysis above for the H2RA group and
+explores the number of subsequent H2RA prescriptions. First, we obtain a
+list of patients in the H2RA exposure group.
+
+```{r}
+
+```
+
+Then we pick out subsequent H2RA prescriptions for these individuals,
+following their index date (study entry).
+
+```{r}
+
+```
+
+We tabulate and plot the number of H2RA prescriptions for the H2RA group
+below.
+
+```{r}
+
+```
+
+### Treatment switching
+
+In our study, our main comparison is between patients prescribed one
+drug (PPIs) and another (H2RAs). We are therefore particularly
+interested in patients who switch from one drug to the other. We call
+this treatment switching.
+
+In this section we will explore whether many of the patients in the PPI
+group subsequently receive a prescription for H2RA. Conversely, we will
+see how many of the H2RA group subsequently receive a prescription for
+PPI.
+
+The following code explores what proportion of the PPI group
+subsequently had a prescription for a H2RA during the study follow-up.
+
+```{r}
+
+```
+
+Similarly, we can explore the proportion of the H2RA group who had a
+subsequent prescription for a PPI during study follow-up.
+
+```{r}
+
+```
+
+```{r}
+
+```
+
+### (Optional) Treatment patterns over time
+
+This sub-section is completely optional and is here for interest only.
+In particular, you do not need to explore treatment patterns for the
+assessment.
+
+Below, we explore the patterns of PPI prescription experienced during
+the study period (i.e. from a patient's index date to the end of the
+study).
+
+The code below extracts a list of all patients who had at least one
+prescription for a PPI on or after their index date. It keeps only a
+list of patient IDs in the object `anyppi`. This is the group of
+patients for whom we are interested in looking at PPI treatment
+patterns.
+
+```{r}
+
+```
+
+We are going to use some survival analysis tools to manipulate the data,
+so we now install the required package. You may need to install the
+package first (`install.packages("survival")`).
+
+```{r}
+
+```
+
+We now restrict our cohort to those who have had at least one PPI
+prescription on or after their index date. We will look for
+prescriptions between that date and 17 April 2017 (the overall study
+end-date). We add 0.5 days to this last date (`endstudydate` below) for
+people who only entered the study on 17 April 2017, so R can distinguish
+between the two events (survival analysis tools often require the end
+date to be strictly after the start date).
+
+```{r}
+
+```
+
+The code below tells R when individual patients enter and exit the study
+(at `indexdate` and `endstudydate`, respectively). Don't worry too much
+about the syntax here - we are merely using this code to get the data in
+the format we want.
+
+```{r}
+
+```
+
+We now take all PPI prescriptions that occurred on or after the index
+date. We calculate the duration of the prescription, from the quantity
+and daily dose. We will assume the prescription covers the period of
+time from the prescription date for a period of `duration` days. Below,
+the variables `start` and `stop` represent the date of getting a PPI
+prescription and the assumed end date of that prescription,
+respectively.
+
+```{r}
+
+```
+
+At this point, the object `ppi` contains multiple rows per patient, each
+indicating the start and stop time of being on a PPI prescription. We
+now need to augment this data by adding rows for the times in between,
+i.e. the periods of not being on a PPI prescription.
+
+Again, don't worry too much about the details of the code. As long as
+you understand the format of the data we're aiming for that's all that
+is needed for our purposes today.
+
+```{r}
+
+```
+
+We're now going to put these two datasets together. To do that, we will
+first order the variables in the same order in each dataset.
+
+```{r}
+
+```
+
+Now we will put the two datasets together:
+
+```{r}
+
+```
+
+Now we add the time-updating PPI prescriptions (and non-prescriptions)
+to the cohort data.
+
+```{r}
+
+```
+
+Finally, we will select a small number of individuals and plot their PPI
+prescription patterns over time. For visual simplicity, the code below
+selects 10 patients who entered the study at about the same time (\~July
+2015).
+
+```{r}
+
+```
+
+Question
+
+Describe the patterns you can see. How realistic do you suppose these
+patterns are? (Remember these are artificial data).
+
+## Summary
+
+In this practical session we have explored the detailed drug data
+available in EHR records. The key messages that we hope you will take
+from this are:
+
+-   The date a patient is prescribed a particular drug is easy to
+    extract. Obtaining information on the dose and duration is much more
+    complex.
+-   Quantity, dose and duration are key for interpreting the data, but
+    these are not always reliably recorded.
+-   Assumptions inevitably must be made to obtain drug exposure and
+    duration variables.
+
+# Practical Four: Extracting an analysis dataset
+
+## PPI study design
+
+Here is an overview of the study design we will implement.
+
+*Study aim* To estimate the effect of proton pump inhibitor (PPI)
+prescription, versus a H2RA prescription, on subsequent all cause
+mortality.
+
+*Eligibility criteria:* Patients whose records are held in our made-up
+database, who:
+
+-   have at least one prescription for either a PPI or a H2RA.
+
+Further, the first such prescription must be: - after the date of the
+patient's registration at the general practice plus one year - between 1
+January 1991 and 17 April 2017
+
+*Exposure* PPI prescription versus H2RA prescription
+
+*Confounders* Age, sex, deprivation (measured by the Index of Multiple
+Deprivation, IMD), calendar year, prior diagnosis of diabetes, GERD in
+the last 6 months.
+
+*Follow-up* For each patient, follow-up begins at the first prescription
+for PPI or H2RA. Ends at the first of: death, end of study (17 April
+2017) and transfer out of the general practice.
+
+*Outcome* All cause mortality
+
+## Identify follow-up time and death data
+
+In order to identify when a patient exits the study, we need to find the
+date of their death (if it occurs) and transfer out of the general
+practice (if that occurs). The exit date (`enddate`) is the first of
+either of these or the overall study end, 17 April 2017.
+
+So, to obtain the study exit date for each patient, we undertake the
+following steps:
+
+-   Open list of eligible people with their index date.
+-   Merge to the Patient file
+-   The end-date for an individual is the first of: date of death
+    (`deathdate`), date of transfer out of the practice (`tod`), and the
+    end of study date (17th April 2017).\
+-   Save dataset with patient, death date and end-date.
+
+```{r}
+
+```
+
+We will also add the date of switching to the alternate exposure group
+in case we want to undertake sensitivity analyses using this
+information.
+
+```{r}
+
+```
+
+## Identify confounder data from Patient and Additional files
+
+Age, sex, deprivation, calendar year and BMI are likely to be key
+confounders of the relationship between PPI prescription and subsequent
+all-cause mortality. The subsequent sections extract data on these
+potential confounders.
+
+### Demographic patient information
+
+Information on age, sex, deprivation and calendar year of study entry
+(index date) are held in the Patient file. To extract these variables,
+we need to:
+
+-   Merge the list of eligible patients with the Patient file.
+-   Pick up year of birth, sex, IMD (index of multiple deprivation).
+-   Create approximate age by assuming month=June, day=15th.(Generally,
+    EHR databases release only non-granular dates of birth, e.g. year of
+    birth, as here).
+-   Extract calendar year from the index date. Group into: 1991-1999,
+    2000-2004, 2005-2009, 2010-2014, 2015-2017.
+-   Save list of patient IDs and age, sex, IMD, calendar year.
+
+```{r}
+
+```
+
+### BMI measurements
+
+There are two ways of obtaining BMI measurements. Sometimes it is
+entered into the EHR system directly, as a BMI measurement.
+Alternatively the patient's weight might be measured. If a height
+measurement is available, this can be converted into a BMI. The code
+below allows either, but takes the version calculated from a weight
+measurement where possible.
+
+Make sure you can run the code below. *Don't worry too much about
+understanding all the lines at this stage.*
+
+The code below is similar to the code you used in the earlier practical
+to explore the BMI data. In addition to what you did then, this code
+restricts to measurements on patents in our eligible cohort and adds
+requirements about how recent the measurements were. Heights are
+required to be taken after the patient was 17 years old (under the
+assumption that heights are relatively stable thereon). Weights and BMI
+are required to be within 5 years of the index date (i.e. we want the
+difference between the index date (study entry) and weight/BMI
+measurement to be between 0 and 5\*365.25, with the index date coming
+later than the measurement).
+
+The first chunk of code extracts direct measurements of BMI (i.e. the GP
+has calculated BMI themselves and entered this into the system as a BMI
+measurement). Typically, we would prefer to take a weight measurement
+and calculate BMI ourselves, to avoid errors in calculation. Therefore,
+below we create a preference variable, which marks these direct BMI
+measures as less preferred (variable `preference` is set to 2).
+
+```{r}
+
+```
+
+The next chunk of code extracts weight measurements and combines them
+with height measurements to calculate BMI. The preference variable is
+set to 1, indicating these calculated values will be taken in preference
+to direct entries of BMI.
+
+```{r}
+
+```
+
+Finally, we combine the two sources of BMI information, taking our
+calculated version if available and the directly entered version
+otherwise. Note that we could take different approaches here - we might
+prefer a direct entry if it is much more recent, for example.
+
+```{r}
+
+```
+
+## Merge all files together
+
+Finally, we will put all the different files together to obtain an
+analysis dataset. Let's merge together:
+
+-   the cohort and comorbidities created in Practical 2
+-   the additional follow-up information (treatment switching) obtained
+    in Practical 3
+-   and the enddates, demographic patient information and BMI created in
+    Practical 4
+
+One we've merged these datasets there is a small amount of tidying to be
+done. For example, patients who do not have a prior diagnosis of
+diabetes will have their diabetes variable (`prior_diabetes`) set to NA
+(missing) by the merge. The last line of code below therefore replaces
+these NAs with 0, indicating the absence of the diagnosis.
+
+```{r}
+
+```
+
+Finally, we will save the data in your working directory, for use in
+subsequent practical sessions.
+
+```{r}
+
+```
+
+## Summary
+
+In this practical session we have assembled our final dataset. The key
+messages that we hope you will take from this are:
+
+-   Extracting an analysis dataset from Electronic Health Record data is
+    a complex multi-step process, combining the use of codelists,
+    phenotyping, drug exposure determination, application of algorithms,
+    etc.
+-   Many assumptions are required to go from the flat files to an
+    analysis dataset. It is vital that these assumptions are documented
+    and communicated along with the analysis results. Sensitivity
+    analysis exploring sensitivity of results to these assumptions is an
+    important part of any EHR analysis.
+
+# Practical 5: Regression modelling
+
+This first analysis practical focuses on regression modelling. We will
+use the dataset that you extracted in the first four EHR practicals. We
+initially use linear regression to explore the relationship between BMI,
+age and sex. We then focus on exploring predictors of PPI prescription.
+
+## Load packages and data
+
+Load the needed packages first
+
+```{r}
+
+```
+
+And read in the analysis dataset:
+
+```{r}
+
+```
+
+## Body mass index, age and sex
+
+Before performing any regression models, we will explore the relevant
+data.
+
+### Explore BMI, age and sex
+
+Draw histograms of BMI and age:
+
+```{r}
+
+```
+
+Create a scatterplot of BMI and age:
+
+```{r}
+
+```
+
+Create a boxplot of BMI by sex:
+
+```{r}
+
+```
+
+Summarise BMI by sex, using appropriate summary statistics.
+
+```{r}
+
+```
+
+It is always a good idea to check for missing values. Obtain the overall
+sample size and the number of missing values for age, gender and BMI:
+
+```{r}
+
+```
+
+Question
+
+Based on the descriptive statistics above, what relationship does BMI
+have with age and sex?
+
+### Linear regression model
+
+First, we fit a linear regression model of BMI on age:
+
+```{r}
+
+```
+
+We can look at the fitted model using the `summary` command:
+
+```{r}
+
+```
+
+Alternatively, the `tidy` command of the `broom` package presents
+results in a nicely formatted way. This is installed as part of the
+tidyverse package.
+
+```{r}
+
+```
+
+Question
+
+Interpret each of the two regression coefficients in the model above.
+Does there appear to be a relationship between BMI and age?
+
+The `glance` function of the `broom` package provides overall model
+statistics, including the R-squared and AIC.
+
+```{r}
+
+```
+
+Question
+
+Does the relationship between age and BMI explain much of the
+variability in BMI?
+
+**OPTIONAL** The `augment` function of the `broom` package adds columns
+to the dataset containing information such as fitted values and
+residuals.
+
+```{r}
+
+```
+
+Look at the new dataframe and make sure you understand what the new
+variables are. Create a histogram o the `.resid` variable:
+
+```{r}
+
+```
+
+Plot the `.fitted` variable against the `.resid` variable:
+
+```{r}
+
+```
+
+Question
+
+Based on the graphs above, do you think the assumptions of the linear
+model are satisfied?
+
+Sometimes the assumptions of linearity, homoscedasticity and normality
+of error term hold more closely on a transformed scale. For instance, we
+could take each value of BMI and take the logarithm of the value. This
+transformation tends to take right-skewed data (data with a few very
+high values) and make it a little more symmetric. Fit a linear
+regression model of log-BMI on age.
+
+```{r}
+
+```
+
+Question
+
+Do the assumptions seem to be better (or worse) satisfied after
+transforming the outcome?
+
+**End Optional section**
+
+Explore the relationship between BMI and both age and sex:
+
+```{r}
+
+```
+
+Add an interaction between age and sex:
+
+```{r}
+
+```
+
+Question
+
+Is there evidence of an interaction between age and sex in their
+association with BMI?
+
+**OPTIONAL SECTION**
+
+To explore whether the relationship between BMI and age is non-linear,
+add a squared and cubic term
+
+```{r}
+
+```
+
+Fit a model with just a constant term. Use the `anova` function to
+compare the age model above with the empty model.
+
+```{r}
+
+```
+
+Question
+
+Interpret the p-value from the F test.
+
+**End Optional section**
+
+## Determinants of PPI prescription (versus H2RA)
+
+Our dataset contains patients who were prescribed either a proton pump
+inhibitor (PPI) or a H2RA. We are going to explore predictors of PPI
+prescription (as opposed to H2RA prescription). First, we will tabulate
+the exposure:
+
+```{r}
+
+```
+
+Question
+
+Is PPI prescription a rare event in this data? Are we likely to have
+problems with model fitting?
+
+### Date of first PPI/H2RA prescription
+
+Draw a histogram of the date of prescription of the first PPI or H2RA:
+
+```{r}
+
+```
+
+Now split the histogram by exposure group (i.e. PPI or H2RA).
+
+```{r}
+
+```
+
+Create a table showing the proportion of prescriptions in the data which
+are for PPI, rather than H2RA, over time.
+
+```{r}
+
+```
+
+Question
+
+Based on the graphs and table above, how would you describe the change
+in prescription pattern over time?
+
+### Predictors of treatment (PPI vs H2RA)
+
+Our "outcome" of interest is PPI prescription (versus H2RA
+prescription). As this is a binary characteristic (patients had only two
+options - a PPI prescription or a H2RA prescription), logistic
+regression is a sensible choice of GLM to use to model these data.
+
+We will now use logistic regression models to explore predictors of
+treatment with PPI versus H2RA. The model below includes a single
+continuous predictor, age at prescription (index date) measured in
+years.
+
+```{r}
+
+```
+
+Question
+
+Interpret the odds ratio for age and its 95% confidence interval. What
+is the estimate on the (Intercept) line?
+
+What is the null hypothesis associated with the rather small p-value
+above for age? Interpret the p-value.
+
+The code below explores a single binary predictor.
+
+```{r}
+
+```
+
+Question
+
+What is the odds of being prescribed a PPI (rather than a H2RA) for
+patients with no prior diabetes? What is the odds for those who do have
+a history of diabetes?
+
+**OPTIONAL**
+
+Back-transform the odds of being prescribed a PPI among those with and
+without prior diabetes to obtain the predicted risk (or probability) of
+being prescribed a PPI in those two groups.
+
+Question
+
+What is the mathematical relationship between the probability and the
+odds?
+
+```{r}
+
+```
+
+**End Optional section**
+
+The code below explores a single categorical predictor (calendar
+period).
+
+Suppose we want to fit a logistic regression model for binary Y with a
+single categorical variable, C, with C= 0, 1, 2. Our general model is:
+
+$$
+log(\pi_x/(1−\pi_x))= \beta_0 + \bf{x}^T \boldsymbol\beta
+$$
+
+Suppose we set C=0 to be the reference, or baseline, category for
+variable C. We create "dummy" variables (indicators for each
+non-reference category of C). For instance:
+
+-   C1 is a variable which takes value 1 if C=1 and 0 otherwise
+-   C2 is a variable which takes value 1 if C=2 and 0 otherwise
+
+Then we fit the model
+
+$$
+log(\pi_x/(1−\pi_x))= \beta_0 + \beta_1 C1+\beta_2 C2
+$$
+
+-   The parameter $\beta_1$ is the log of the odds ratio comparing C=1
+    with C=0.
+-   The parameter $\beta_2$ is the log of the odds ratio comparing C=2
+    with C=0.
+
+Fit a logistic regression model relating PPI prescription to the
+calendar period.
+
+```{r}
+
+```
+
+Question
+
+How should we interpret the rather large estimate (around 25)?
+
+Why should we not interpret the individual p-values in this model?
+
+**OPTIONAL**
+
+Use the likelihood ratio test to obtain a p-value testing the hypothesis
+that calendar period is not associated with the probability of receiving
+a PPI prescription. You may have to first install the `lmtest` package
+(using the command `install.packages("lmtest"))`.
+
+```{r}
+
+```
+
+Question
+
+How should we interpret the p-value from this test? What null hypothesis
+is it testing?
+
+**End Optional section**
+
+Finally, we will include all the potential predictors in the same model:
+
+```{r}
+
+```
+
+Question
+
+How should we interpret the estimate labelled "genderMale"?
+
+We can use this model to predict the probability of receiving a
+prescription for PPI (rather than for H2RA):
+
+```{r}
+
+```
+
+Draw a histogram of the predicted probabilities:
+
+```{r}
+
+```
+
+Question
+
+What do you think accounts for the strange bumps we are seeing here?
+
+## Summary
+
+In this practical session we have explored a number of different
+regression models using the data we assembled from the (artificial) data
+in the first four practical sessions. The key messages that we hope you
+will take from this are:
+
+-   Regression modelling is a powerful and flexible tool for exploring
+    relationships between an outcome and a set of explanatory/predictor
+    variables
+-   Initial exploratory analysis is really important to be able to
+    understand the regression output
+
+# Practical 6: Causal inference
+
+This R Markdown file contains the causal inference practical using the
+artificial electronic health record data. We will use the dataset that
+you extracted in the first four EHR practicals and focus on estimating
+the effect of PPI prescription (compared with H2RA prescription) on the
+risk of 5-year mortality.
+
+Note that for simplicity we will also remove anyone with any missing BMI
+data from our analysis dataset. In real life we would use a range of
+techniques to handle the missing BMI data; for today's session, however,
+we wish to focus our attention on the estimation of causal effects.
+
+## Load packages and data
+
+Load the needed packages first
+
+```{r}
+
+```
+
+And read in the analysis dataset, removing any patient with missing BMI
+data:
+
+```{r}
+
+```
+
+In this practical, we will begin to explore the relationship between the
+outcome - all cause mortality - and the exposure - PPI prescription. We
+will initially ignore the time-to-event aspect of the outcome variable,
+while we are still learning survival analysis. We will bring these two
+elements together later!
+
+For now, our outcome will be the binary variable of death within 5
+years. Patients who had their first prescription for PPI or H2RA less
+than 5 years prior to the study end (12th April 2017) did not have the
+opportunity of being followed-up for 5 years. Note that even for the
+remaining patients, some will have been followed up for a shorter time
+than others (some patients will have transferred out of their general
+practice before the 5 years ended). In real life, we would use some sort
+of survival analysis to explore this outcome in these data.
+
+We will estimate the average causal effect of PPI prescription (vs H2RA
+prescription) on 5-year all-cause mortality, as quantified by the risk
+ratio and risk difference.
+
+Throughout the practical, we will talk about exposure, although often in
+causal inference we will use the words "intervention" or "treatment" to
+talk about the exposure of interest.
+
+## Explore the crude association between PPI and death
+
+Now, ignoring the impact of any confounders just yet, let us estimate
+the crude association between PPI and the risk of all-cause mortality.
+
+First we calculate the proportion of deaths in the PPI and H2RA groups.
+Then we obtain crude risk ratios for the association between PPI and
+death.
+
+```{r}
+
+```
+
+Question
+
+Hand-calculate the risk ratio and risk difference for mortality,
+comparing the PPI group to the H2RA group. Interpret the results. Do the
+estimated risk ratio and risk difference indicate a causal effect of
+PPIs on mortality?
+
+### Standardization
+
+We can obtain these same rates in a more convoluted way, via
+standardisation, using a logistic regression model. Although there is no
+reason to do this here, we will find this technique helpful later, so it
+is useful to understand the process.
+
+Simple standardization, which you may have previously encountered in the
+form of age-standardization, is commonly applied to obtain marginal
+causal effects from regression model outputs. In this case, we wish to
+obtain the estimated risk of death in two hypothetical scenarios (i) one
+in which every patient in our analysis dataset received a PPI
+prescription, and (ii) one in which every patient in our analysis
+dataset received a H2RA prescription.
+
+To do this, using our model relating death to our exposure and potential
+confounders, we will:
+
+-   Obtain the mean estimated risk of all-cause mortality under the two
+    hypothetical scenarios of every patient having PPI prescription and
+    every patient having H2RA prescription.
+-   Estimate the risk ratio for all-cause mortality comparing PPI and
+    H2RA (by dividing the mean risk under PPI by the mean risk under
+    H2RA) and the risk difference (by subtracting one risk from the
+    other). We will only estimate the point estimates for now.
+
+First, we fit our regression model for the outcome on exposure. Here,
+this is simply a crude model including no other variables.
+
+```{r}
+
+```
+
+Then we create two copies of the analysis dataset. In one, PPI
+prescription is set to 1 (i.e. indicating every patient had a PPI
+prescription). In the other dataset, PPI prescription is set to 0 (i.e.
+indicating every patient had a H2RA prescription).
+
+```{r}
+
+```
+
+Finally, we use the logistic regression model to predict the probability
+of death in our two copies of the analysis data, with modified PPI
+status. In the first, this estimates the probability of death if
+everyone received a PPI prescription. In the second dataset, this
+estimates the probability of death if everyone received a H2RA
+prescription. These two probabilities are stored as variables in the
+analysis dataset.
+
+```{r}
+
+```
+
+You can use the `view(cinf_data$ppi_1)` command to look at the results.
+What do you notice about the predictions? Why?
+
+Finally, we take the mean of the two sets of predictions across the
+sample. We divide one mean by the other to obtain the estimated risk
+ratio and risk difference.
+
+```{r}
+
+```
+
+Question
+
+When looking at those estimates, how confident are we that these
+represent causal effects? What could have influenced the estimates to
+reflect non-causal relationships?
+
+## Assess the assumptions required
+
+We have a crude estimate for the relationship we are interested in. We
+now consider the assumptions required to obtain a causal estimate.
+
+### Consistency, SUTVA and positivity
+
+We will explore the exchangeability (or no unmeasured confounding)
+assumption later.
+
+First, think about the other main assumptions: positivity (everyone in
+our sample must have the possibility of being in either exposure group),
+SUTVA (no interference) and consistency (no hidden variations of
+treatment/exposure).
+
+Question
+
+For our specific question and dataset, how likely is it that these
+assumptions hold? What specific violations of each assumption may have
+occurred?
+
+### Exchangeability
+
+As discussed previously, age, sex, deprivation, calendar year and BMI
+are likely to be key confounders of the relationship between PPI
+prescription and subsequent all-cause mortality.
+
+Draw a causal diagram for the association between PPI prescription and
+all-cause mortality, considering if each covariate is a confounder, a
+collider, or lies in the causal pathway between the exposure and
+outcome. You can do that by hand or in Power Point or other software of
+your choice. Include nodes for exposure, outcome, and the potential
+confounders above. Add in any variable that you think affects any two
+variables already in the diagram, whether or not they are measured in
+our dataset.
+
+Question
+
+What does your causal diagram tell you about potential confounders? Do
+you think there are important unmeasured confounders?
+
+Having drawn a causal diagram, it is a good idea to check whether the
+associations that you would expect to be present in your data really
+are. For example, if your causal diagram has an arrow from BMI to all
+cause mortality, then we would expect to see a difference in observed
+risk of mortality according to BMI in our data.
+
+#### Check whether potential confounders are associated with exposure
+
+Having explored potential confounding through the causal diagram, we now
+turn to the data and explore the extent to which the two exposure groups
+are comparable to each other in terms of measured potential confounders.
+Obviously, we are unable to do this for unmeasured variables.
+
+We will first start with a simple description of the population we are
+studying. Summarise covariates according to PPI prescription. You can
+compute frequencies and proportions along with chi-squared values for
+binary or categorical covariates/ For continuous covariates, obtain the
+mean or median with standard errors or interquartile intervals,
+respectively.
+
+For example, for BMI (here we are summarizing the number, the mean and
+the standard deviation in each PPI group):
+
+```{r}
+
+```
+
+Question
+
+Now that you have summarised the differences between the patients
+prescribed PPI vs H2RA, what can you say about the comparability of the
+groups in terms of the available covariates?
+
+When working with large number of covariates, you can also generate a
+table summarising covariates by exposure (or treatment) status. This can
+include descriptive statistics, with or without hypothesis tests
+comparing the two groups such as chi-squared or t-test. This is
+sometimes called a "Table 1", since this type of table is often the
+first table to appear in a publication exploring an exposure or
+treatment effect. This can be done in R using the `tableone` command.
+
+If you wish to try this, first install the `tableone` package (using the
+command `install.packages("tableone")`). Load the package:
+
+```{r}
+
+```
+
+Create lists containing all factor variables (so the package knows to
+treat them as categorical variables, not continuous variables) and all
+variables to be included in the table.
+
+```{r}
+
+```
+
+Create Table 1 stratified by PPI:
+
+```{r}
+
+```
+
+> Note: While these types of packages can increase efficiency of your
+> workflow, don't be tempted to accept the output without thought. If
+> you have a continuous varable, is the mean an appropriate summary
+> statistic? If you add the automatcally generated p-values are the
+> default tests applied appropriate to your situation? Etc.
+
+#### Check whether potential confounders are associated with outcome
+
+We now explore the relationship between each potential confounder (age,
+sex, deprivation, calendar year and BMI) and death. For example, the
+code below looks at age.
+
+```{r}
+
+```
+
+Question
+
+Having explored empirical relationships in the data, which variables do
+you think are likely to be confounders? Which have the strongest
+relationships with PPI prescription and death? Which covariates should
+we account for in order to remove (observed) confounding?
+
+## Account for observed confounders
+
+We now fit a multivariable model to account for observed confounders.
+
+```{r}
+
+```
+
+Question
+
+Interpret the results. How do the adjusted estimates compare to the
+crude? Do you think it is possible to say that this is the causal effect
+of PPI on mortality? Why?
+
+### Standardization
+
+We use the standardisation approach explored earlier to obtain an
+estimate of the risk ratio and risk difference of mortality, comparing
+PPI and H2RA, after accounting for confounding by measured variables.
+
+We have already created copies of the dataset in which every patient is
+set (sometimes contrary to fact) to have received a PPI prescription,
+and conversely in which every patient is set to have received a H2RA
+prescription. We now apply the multivariable logistic regression model
+we have just fitted to these datasets to obtain the required
+predictions.
+
+```{r}
+
+```
+
+```{r}
+
+```
+
+Question
+
+Interpret the results. How do the risk difference and ratios compare to
+the crude estimates above?
+
+### [Optional] Obtaining confidence intervals for standardised estimates
+
+Note that the standardization approach used above does not provide
+standard errors. Therefore, we cannot obtain confidence intervals or
+p-values, which limits usefulness of the estimates. In some cases,
+packages exist which provide analytic standard errors (i.e. calculations
+have been performed which have provided equations to estimate the
+standard errors from the data at hand, which allows confidence intervals
+to be calculated). If not, we often use *bootstrapping* to obtain
+confidence intervals.
+
+The R package `stdReg` allows us to obtain analytic confidence intervals
+for standardised estimates following a range of regression models.
+First, install the package (`install.packages("stdReg")`). Then load the
+package:
+
+```{r}
+
+```
+
+We have already fitted the relevant logistic regression model above.
+Since logistic regression is a GLM, this task falls under the `stdGlm`
+sub-command:
+
+```{r}
+
+```
+
+The last two options above tell R to provide estimates under scenarios
+where (i) the variable `ppi` is set entirely to the value 0, and (ii)
+the variable `ppi` is set entirely to the value 1. We can then print out
+the estimated risk difference:
+
+```{r}
+
+```
+
+Or the estimated risk ratio:
+
+```{r}
+
+```
+
+Question
+
+Interpret the results. What does this output add to what we had
+previously?
+
+### [Optional] -- Explore the relationship between calendar time, BMI and mortality
+
+In the practicals so far, you might have noticed that time of receiving
+the PPI, or H2RA, prescription, is an important confounder. Similarly,
+BMI seems to be an important confounder for the relationship between PPI
+prescription and death. If you have time, you might want to explore a
+little bit more by including square terms and interaction terms for
+calendar time and BMI in your multivariable logistic model.
+
+While we do not cover splines in this module, if you finish really early
+you could explore how to add calendar time as a spline in your
+multivariable logistic model!
+
+## Summary
+
+In this practical session we have explored the assumptions required to
+make causal statements and discussed the extent to which these can be
+tested. We have studied the main confounders for the relationship
+between exposure and outcome, aiming to estimate the causal effect using
+multivariable logistic regression. We expect that, by the end of this
+practical, you will be able to:
+
+-   Acknowledge the main assumptions required for causal inference and
+    how they apply to your data.
+-   Conduct data checks to explore measured confounding, and consider
+    how the unconfoundedness assumption applies to your data after
+    accounting for the available covariates.
+-   Generate an estimate accounting for measured confounders, using
+    logistic regression for the effect of a specific intervention (or
+    exposure or treatment) on an outcome.
+
+# Practical 7: Propensity scores
+
+In this practical, we will continue to explore the relationship between
+PPI prescription (exposure) and 5-year all-cause mortality (outcome) but
+now using propensity score approaches. We will continue to ignore the
+time-to-event aspect of the outcome variable and we will bring these two
+elements together later in the module!
+
+As previously, for simplicity we will also remove anyone with any
+missing BMI data from our analysis dataset. In real life we would use a
+range of techniques to handle the missing BMI data; for today's session,
+however, we wish to focus our attention on the estimation of causal
+effects.
+
+## Read in data and packages
+
+### Load packages
+
+Install any of the following packages that you do not already have
+installed: MatchIt, survey, cobalt, TableOne (using the command
+`install.packages("")`). Then load the needed packages:
+
+```{r}
+
+```
+
+### Read in data
+
+Read in the analysis dataset, removing any patients with missing BMI
+data:
+
+```{r}
+
+```
+
+## Estimate the propensity score
+
+As we described in the class earlier, the propensity score is defined as
+the probability of exposure/treatment assignment conditional on measured
+(or observed) characteristics. Our aim is to identify an exposed group
+and a non-exposed group that are similar in terms of observed
+characteristics, on average. To do that, for each individual, we
+estimate their probability of being exposed (i.e. of having a
+prescription for PPI rather than H2RA). Here, we use a a multiple
+logistic regression model to estimate those probabilities.
+
+First, we will fit a multiple logistic regression model for being
+exposed to PPI:
+
+```{r}
+
+```
+
+Using this model, we predict the probability of each individual being
+exposed given their observed confounders/characteristics. We will save
+these probabilities as a variable in the analysis dataset.
+
+```{r}
+
+```
+
+After fitting the propensity score, it is important to investigate its
+distribution!
+
+Ideally, we do not want the propensity score to completely explain the
+probability of being in the exposed or the unexposed group (i.e. we do
+not want scores at zero or 1).If this does occur, this would indicate
+that some individuals have almost no chance of being in the other
+exposure group, which would violate the positivity assumption (which
+states that each individual has a non-zero probability of being in
+either exposure group).
+
+Draw a histogram of the estimated propensity scores. Are there very
+extreme propensity score values?
+
+```{r}
+
+```
+
+Second, we wish to check that the range of propensity score values in
+the two exposed groups overlaps. Such overlap is sometimes called
+*common support*. A lack of common support (i.e. lack of overlap) would
+also indicate a violation of the positivity assumption. For example, if
+we have estimated propensity score values between 0.8 and 0.9 in the
+exposed group but the highest propensity score in the unexposed group is
+0.78, this would indicate that we have a set of people in the exposed
+group who do not have anyone comparable to them in the unexposed group.
+
+To explore the area of common support, you can use a histogram or plot a
+box plot stratifying by PPI prescription.
+
+```{r}
+
+```
+
+The R package `ggplot2` allows us to produce more sophisticated and
+publishable graphs. Also, it allow us to plot the distribution of
+propensity scores according to PPI prescription in the form of a
+histogram. First, install the package (`install.packages("ggplot")`).
+Then load the package:
+
+```{r}
+
+```
+
+And produce a histogram of the propensity score according to PPI
+prescription:
+
+```{r}
+
+```
+
+Summarise the propensity score:
+
+```{r}
+
+```
+
+Question
+
+Based on the results above, how concerned are you about violations of
+the positivity assumption?
+
+## Assessing covariate balance
+
+Assessing differences in the distribution of covariates between exposed
+and non-exposed groups before incorporating any type of adjustment for
+confounding is a key step to identify potential confounding (by measured
+covariates). Here we will calculate, for each covariate, the
+standardized difference (StD) between exposed and non-exposed groups. We
+use StD instead of hypothesis testing because the StD is less influenced
+by sample size. We will consider values of StD of over 0.1 to indicate
+meaningful imbalance of that covariate between groups.
+
+To calculate the standardized differences between two groups for
+continuous variables we use the means and standard deviations of the
+mean:
+
+$$ 
+StD=(mean_{exp} – mean_{unexp})/sd_{pool}
+$$
+
+where $mean_{exp}$ and $mean_{unexp}$ are the sample mean of the
+covariate in the exposed and unexposed groups, respectively, and
+"sd_pool" represents the standard deviation of the covariate in the
+entire sample. There are various ways of obtaining an estimate of the
+latter. We will calculated this from the sample standard deviations of
+the covariate in the two groups ($sd_{exp}$ and $sd_{unexp}$} as:
+
+$$
+sd_{pool}=\sqrt{(sd_{exp}^2+sd_{unexp}^2)/2}
+$$
+
+Use this formula to calculate the standardised difference of age between
+the PPI and the H2RA groups.
+
+```{r}
+
+```
+
+```{r}
+
+```
+
+To calculate the standardized difference between two groups for
+categorical variables we use proportions and standard deviations of
+proportions:
+
+$$
+StD=(prop_{exp} – prop_{unexp})/sd_{pool}
+$$
+
+where $prop_{exp}$ and $prop_{unexp}$ are the sample proportion with the
+characteristic of interest in the exposed and unexposed groups,
+respectively, and $sd_{pool}$ can be calculated as:
+
+$$
+sd_{pool}=\sqrt{(prop_{exp}*(1-prop_{exp}) + prop_{unexp}(1-prop_{unexp}))/2}
+$$
+
+Use these formulae to calculate the standardised difference of gender
+between the PPI and H2RA groups.
+
+```{r}
+
+```
+
+```{r}
+
+```
+
+Alternatively, various R packages can calculate standardised differences
+for you. For example, you can use the package `TableOne` to do this
+using the `smd` option:
+
+```{r}
+
+```
+
+```{r}
+
+```
+
+```{r}
+
+```
+
+```{r}
+
+```
+
+Question
+
+What are the differences between the different ways of obtaining the
+standardised differences?
+
+How balanced are the covariates between the PPI and H2RA groups? Which
+covariates have most/least balance? Do the results indicate that the
+relationship between PPI and mortality is confounded?
+
+## Propensity score weighting
+
+After estimating the propensity scores, we can use these values to mimic
+the two hypothetical scenarios in which (i) all individuals were exposed
+(i.e. every person received a PPI prescription), and (ii) no individual
+was exposed (i.e. every person received a H2RA prescription). In each of
+these two hypothetical scenarios, the distribution of covariates
+reflects the distribution of covariates seen in the whole sample.
+Therefore, we expect that the covariates will be balanced if we compare
+between these two hypothetical scenarios.
+
+We mimic this situation by using the estimated propensity scores to
+weight both exposure groups to reflect the population average
+distribution of covariates in our sample. Comparing the outcomes among
+these two weighted samples will then estimate the *Average Treatment
+Effect*, ATE.
+
+Alternatively, we can weight just the unexposed group so they have the
+same distribution of covariates as in the exposed group. This compares
+the observed scenario where exposed people are exposed with the
+hypothetical scenario in which those same exposed people had instead not
+been exposed. Comparing outcomes between these two scenarios will
+instead estimate the *Average Treatment Effect on the Treated*, ATT.
+
+### Deriving the ATE and ATT weights
+
+We begin by using the estimated propensity scores to derive ATT and ATE
+weights.
+
+```{r}
+
+```
+
+We summarise the weights to check for extreme weights:
+
+```{r}
+
+```
+
+### Assessing covariate balance in the weighted sample
+
+The key diagnostic criterion in propensity score approaches is whether,
+after accounting for the propensity score, the balance of the (measured)
+confounding variables between exposed and unexposed groups has been
+achieved. To verify if the adjustments were satisfactory, we estimate
+the standardized differences of covariates between the two exposure
+groups *after applying the weights*. We can do this by using the
+`cobalt` package. (The `TableOne` package doesn't work on weighted
+data).
+
+First, apply the ATE weights and assess covariate balance.
+
+```{r}
+
+```
+
+Repeat for the ATT weights.
+
+```{r}
+
+```
+
+```{=html}
+<style>
+div.yellow{background-color:#FFF8DC; border-radius: 5px; padding: 5px;}
+</style>
+```
+::: yellow
+<b> Question </b>
+
+Did the weighting improve the balance of the covariates? Did we achieve
+balance for all the covariates?
+:::
+
+<br>
+
+### Estimate the treatment effect
+
+If we consider the weighted sample, where each individual is weighted by
+the ATE weights that we have obtained, we should have balanced
+covariates between the PPI and H2RA group. We can therefore simply
+compare outcomes between the PPI and H2RA groups, assuming that the
+weighting has removed (measured) confounding.
+
+We can do this in a fairly manual manner, as follows. First, we separate
+the dataset into the exposed (PPI) and unexposed (H2RA) groups. (We
+don't really need to do this, but it makes the following lines of code
+easier to read).
+
+```{r}
+
+```
+
+Suppose we want to estimate the ATE. We then take the mean of the
+outcome (`died`), weighting by the ATE weights. This involves
+multiplying each individual's death status (`died`) by their weight
+`ATEwg`, summing over the whole group, and dividing by the sum of the
+weights.
+
+```{r}
+
+```
+
+This tells us the estimated proportion of deaths in the PPI group and
+the H2RA group. We can simply subtract one from the other, or divide
+them, to estimate the risk difference and risk ratio.
+
+```{r}
+
+```
+
+In practice, it is easier to do this calculation by using a regression
+model. An advantage of doing so is that we obtain 95% confidence
+intervals and p-values. We do this by fitting a model of outcome on
+exposure, applying our weights to each individual. The model we use will
+depend on the way we want to quantify the treatment effect. We would use
+a logistic regression model to obtain an odds ratio, a GLM for binary
+data with a log link to estimate the risk ratio and a GLM for binary
+data with an identity link to estimate the risk different. To
+incorporate weights in the regression models in R, we can use the
+`survey` package.
+
+To estimate the ATE, for example, we use the ATE weights as follows:
+
+```{r}
+
+```
+
+And to estimate the ATT:
+
+```{r}
+
+```
+
+Question
+
+How similar the ATE and the ATT are? Why do you think this is the case?
+
+## Propensity score adjustment
+
+An alternative way of using propensity scores to account for (measured)
+confounding is by simply including them in the regression as another
+covariate. By adding the propensity score as a continuous variable in a
+multiple logistic regression we estimate the average treatment effect.
+
+### Incorporate the propensity score in the regression as a simple adjustment
+
+```{r}
+
+```
+
+Although people often use the treatment (or exposure) coefficient as the
+estimate of the treatment effect, it is better to use standardisation.
+The reason for this is that using standardisation we can obtain the risk
+difference or risk ratio, which can be more clearly tied to causal
+contrasts than the odds ratio from the model above. As in the previous
+session, we create two variables indicating that everyone is exposed
+(`ppi_yes`) and no-one is exposed (`ppi_no`).
+
+```{r}
+
+```
+
+We use our propensity-score-adjusted model to obtain the predicted
+probability of experiencing the outcome for each individual under each
+of the hypothetical scenarios:
+
+```{r}
+
+```
+
+Then we take the mean of the two sets of predictions across the sample.
+We divide one mean by the other to obtain the estimated risk ratio and
+risk difference.
+
+```{r}
+
+```
+
+We would typically then use the bootstrap to obtain a 95% confidence
+interval. We will not do that now, since this can be quite a time
+consuming process.
+
+If you have time, explore how much the estimated risk ratio and risk
+difference change if you add in an interaction between the propensity
+score and PPI, and some non-linearities in the propensity score (e.g.
+try adding a squared and cubed term).
+
+```{r}
+
+```
+
+Question
+
+How do these estimates compare to the ones obtained using weighting?
+
+## [Optional] Propensity score matching
+
+Finally, the most common application of propensity score methods is PS
+matching. The default in matching is to estimate the ATE, but the
+process can be modified to estimate the ATT. Checking balance and
+visualisation of common support/overlap is very straightforward in PS
+matching. There are many ways to create propensity score matched
+samples. The choice depends partly on the treatment effect we are
+interested in, whether common support/overlap holds, and the size of the
+sample, among others. In this example we will:
+
+-   Use the PS to match individuals -- we will use 1:1 nearest
+    neighbouring matching with a maximum distance (caliper) of 0.1 (i.e.
+    we will only allow two individuals to be declared a match if their
+    propensity scores are within at most 0.1 of each other).
+-   Check if the matching successfully selected a population of exposed
+    and non-exposed who are comparable in terms of the observed
+    covariates, You can use the standardised differences before and
+    after matching to do this.
+-   Estimate the ATT by fitting a univariable logistic regression to
+    estimate the association between exposure (PPI) and outcome (died)
+    in the matched sample.
+
+First, we will use the package `MatchIt` to perform the matching.This
+command may take a few minutes to run.
+
+```{r}
+
+```
+
+Question
+
+Look at the bottom of the output. How many individuals are in the
+matched sample in each exposure group? Why is this a problem?
+
+We then extract the matched dataset. This removes individuals who were
+not matched.
+
+```{r}
+
+```
+
+Have a look at the matched dataset. Make sure it contains the number of
+people that you expect!
+
+To assess whether the matching has produced good balance of the
+covariates we can estimate the standardised differences in the matched
+sample.
+
+```{r}
+
+```
+
+Alternatively, we can use the `TableOne` package.
+
+```{r}
+
+```
+
+To estimate the ATT we can fit a logistic regression in the matched
+dataset:
+
+```{r}
+
+```
+
+```{=html}
+<style>
+div.yellow{background-color:#FFF8DC; border-radius: 5px; padding: 5px;}
+</style>
+```
+::: yellow
+<b> Question </b>
+
+In which situations might we prefer to estimate the treatment effect
+using propensity score matching? And when might we prefer weighting?
+What considerations might apply?
+:::
+
+<br>
+
+## Summary
+
+In today's practical we learned how to estimate the propensity score and
+how to apply the estimated propensity scores to estimate a treatment, or
+exposure, effect. We expect that, by the end of this practical, you will
+be able to:
+
+-   Define the propensity score and estimate it within a sample of data
+-   Describe the benefits of applying a propensity score approach\
+-   Critically reflect on the differences between ATT and ATE
+-   Estimate the ATT and ATE using a range of propensity score methods
+-   Perform various checks of assumptions, including
+    -   Investigate violations of the positivity assumption
+    -   Explore covariate balance, before and after applying a
+        propensity score method
+
+# Practical 8: Self controlled case series
+
+This analysis practical focuses on self-controlled study designs,
+specifically the Self-Controlled Case Series (SCCS) design.
+
+**Acknowledgement**: Very grateful thanks to Ian Douglas, Adrian Root
+and Kate Mansfield (LSHTM) who provided data and code for this
+practical.
+
+## The data
+
+This practical uses data originally made available by Professor Paddy
+Farrington and Dr Heather Whitaker from the Open University. The data
+have been altered slightly to mimic the format of data you may obtain
+from a database of electronic health records.
+
+The research question that we will consider is discussed in detail in:
+Whitaker HJ, Farrington CP, Spiessens B, Musonda P. Tutorial in
+biostatistics: the self-controlled case series method. Statistics in
+Medicine. 2006,25(10):1768-97. We have provided you with this reference
+on Moodle. Read Section 3.1 to familiarise yourself with the research
+qestion.
+
+In short, the question is about whether the measles mumps and rubella
+vaccine (MMR) is associated with an increased risk of viral meningitis.
+The data for a series of 10 patients are available for this analysis.
+
+Download the data you have been provided with from Moodle.
+
+| Variable  |  Format   | Description                        |
+|-----------|:---------:|------------------------------------|
+| patid     | numerical | Patient's identifier               |
+| dob       | numerical | Date of birth                      |
+| indexdate | numerical | Start of follow up                 |
+| endFU     | numerical | End of follow up                   |
+| eventdate | numerical | date of viral meningitis diagnosis |
+| exday     | numerical | date of MMR vaccine administration |
+
+![Figure 1. Visual depiction of SCCS data](sccs_data.png)
+
+### Explore the data
+
+As usual, we will load tidyverse.
+
+```{r}
+
+```
+
+Read in the data and reformat all dates as date variables (you will find
+the command `as.Date(varname, "%d/%m/%Y")` helpful for this). Print out
+the first few rows of the dataset.
+
+```{r}
+
+```
+
+Check dates have been imported correctly (e.g. using the command
+`class(sccs_data$dob)`). Have a look at the data. How many infants
+developed viral meningitis between 15 and 35 days after receiving the
+vaccine? Which ones (i.e. what are their patient IDs)? Does this agree
+with the impression you got from the figure above?
+
+```{r}
+
+```
+
+In order to analyse the data you will need to reformat it so that every
+time a patient moves from one age group to the next or from one risk
+state to the next, a new line of data is generated. Although this sounds
+relatively simple, the programming involved can be complex. This example
+is relatively straightforward but will illustrate the general process.
+
+### Start and end of follow-up
+
+Throughout we will create a variable called `type`, which will tell us
+what type of cut-point we are thinking about (a start or end date for
+follow-up, a change in age bands, or change between at-risk periods). We
+will use the following codes for follow-up dates: type=1 (date of start
+of follow-up), type=2 (date of end of follow-up).
+
+First, keep only the patient ID, start and end of follow-up variables
+and rename the last two `date1` and `date2`, respectively.
+
+```{r}
+
+```
+
+Now use the `gather` function to "reshape" the data. In other words,
+rather than having one row per person, with two date variables (the
+start and end of follow-up), we will change to a dataset with two rows
+per person and one date variable (called `date`), containing the start
+date in the first of that person's data rows and the end in the second.
+
+Also, create a `type` variable, containing the value 1 to indicate that
+the row contains the start date and 2 to indicate an end date.
+
+```{r}
+
+```
+
+Compare the two datasets `startend_dates` and `startend` to make sure
+you understand the connection between the two.
+
+### Start and end of "at-risk" periods
+
+The risk period is assumed to start 15 days after exposure to the MMR
+vaccine and to end 35 days after (inclusive). For our `type` variable,
+we will use the codes: type=3 (15 days post-vaccine, start at-risk
+period), type=4 (36 days post-vaccine, first day of no longer being
+at-risk.
+
+First, keep only the date of vaccine for the 10 patients and create
+dates reflecting 15 and 36 days later.
+
+```{r}
+
+```
+
+Now use the `gather` function to put the two dates for each person in a
+single date variable (called `date`). In addition, create a `type`
+variable, containing the value 3 for the start of the at-risk period and
+the value 4 for the start of the subsequent not-at-risk period.
+
+```{r}
+
+```
+
+## Age-bands
+
+There are two age bands of interest, from 1 year to 18 months and from
+18 months to 2 years (remember children only enter the study at 1 year
+old). Using similar code to the above, create a dataset with two lines
+per person, one (type=5) with the date a person becomes 18 months old
+(547 days) and the other (type=6) with the date a person becomes two
+years old (730 days).
+
+```{r}
+
+```
+
+### Put the data together
+
+Now we will append the three datasets above (`startend`, `risk`, `age`),
+to create a dataset with one date variable for the different cut-points.
+For each person, sort the data according to the dates at which the
+relevant cut-points occur (i.e. sort by `patid` and `date`). We will add
+in the dates of birth, in order to calculate the age at the cut-point
+associated with the current line of data (`age_at_cutpoint`), and the
+date of the next cut-point (`age_next_cutpoint`).
+
+```{r}
+
+```
+
+Look at the data for one patient to make sure you understand how the
+data are structured:
+
+```{r}
+
+```
+
+Now we will create a variable indicating the age-band that the person
+belongs to in each line of their data. In the line of data with the
+cut-point noting the person has reached 18+ months, and any subsequent
+lines of data (remember, data are sorted by `patid` and `date`) the
+person will be in the older age-group (18-24 months). We will create a
+variable `ageband` taking value 1 before the person is 18 months and 2
+when they are 18+ months.
+
+```{r}
+
+```
+
+For the at-risk periods, we wish to indicate that a person is at risk in
+the line of data at which they reach 15 days post-vaccine. They remain
+at risk in any rows of data up until their first day of being no-longer
+at risk (36 days post-vaccine).
+
+One way of doing this is to create the cumulative sum (within a person)
+of the rows of data that they are at risk, and the cumulative sum of the
+rows of data where they no longer at risk. Any rows of data in which
+they qualify as "at-risk" and not "no longer at risk", we will allocate
+them a value of 1 for our new variable `exgr` and 0 otherwise.
+
+```{r}
+
+```
+
+Now we will remove any intervals (rows of data) which occur after a
+person's end of follow-up. We will also remove any rows of data with
+zero length (i.e. where the age is the same at the start of one row of
+data and the next).
+
+```{r}
+
+```
+
+### Events
+
+Now we will add in the data regarding the outcome event, diagnosis of
+viral meningitis. We will merge this date into our current dataset and
+calculate the age in days at which the event occurred.
+
+```{r}
+
+```
+
+Now we create a variable indicating rows in which an event occurred.
+
+```{r}
+
+```
+
+## Fit mixed Poisson regression
+
+We now have a dataset ready for analysis. Before fitting our regression
+model, we will tell `R` to treat the risk=period variable and age-band
+variables as factor variables. The command we will use also needs our
+patient identifier to be a factor.
+
+```{r}
+
+```
+
+We will include the log of the interval time as an offset variable.
+
+```{r}
+
+```
+
+We will use a package called `gnm` to fit our conditional Poisson
+regression model. You will need to install the package first, using:
+`install.packages("gnm")`. Load the package.
+
+```{r}
+
+```
+
+Once you have done that, fit a conditional Poisson regression model
+including at-risk periods and age-bands as exposure variables. The
+syntax of the code is quite similar to standard GLMs using `glm`. We
+need to tell R that we want the family to be Poisson and the link to be
+the log-link. And, as usual, we need to specify the dataset.
+
+We will include the log of the interval as an offset variable. This is
+the same as in standard Poisson regression. Forcing the log of the
+interval into the regression model with coefficient set to 1 (which is
+what an offset does) takes account of the fact that we expect more
+events to occur in longer intervals of time and fewer in shorter
+intervals of time. We do this, in practice, by adding
+`offset(name_of_offset_var)` to the linear predictor.
+
+We will condition on the patient and include the log of the interval as
+an offset variable. This type of conditioning is not something we have
+studied. We can think of this as taking account of the fact that two
+bits of time from the same person will be more similar than two bits of
+time from different people, in terms of their likelihood of experiencing
+the event during that bit of time. In practice, we do this by adding the
+option `eliminate=patid`.
+
+```{r}
+
+```
+
+The output is easiest to interpret on the incidence rate ratio scale.
+
+```{r}
+
+```
+
+Question
+
+What is the interpretation of the output from this regression model?
+What should we conclude about the relationship between the MMR vaccine
+and diagnosis of viral meningitis?
+
+## Summary
+
+In this practical session we have explored the steps needed in practice
+to create an analysis-ready dataset for a self-controlled case series
+study design. The key messages that we hope you will take from this are:
+
+-   Creating the analysis dataset needs careful thought about
+    overlapping periods and cut-points within individuals
+-   The analysis itself is relatively straightforward once the design
+    and data manipulation have been completed
